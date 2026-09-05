@@ -1,115 +1,179 @@
-# 🧠 Nexus Intelligence
-### *Autonomous Multi-Agent Orchestration for Business Synthesis*
+# Nexus Intelligence
 
-[![Status](https://img.shields.io/badge/Status-Production--Ready-blueviolet?style=for-the-badge)](https://github.com/Wajiz-pk)
-[![Core](https://img.shields.io/badge/Architecture-Planner--Synthesizer-00ff00?style=for-the-badge)](https://github.com/Wajiz-pk)
-[![License](https://img.shields.io/badge/License-MIT-white?style=for-the-badge)](LICENSE)
+[![CI](https://github.com/daniellopez882/Autonomous-Multi-Agent-Orchestration-for-Business-Synthesis/actions/workflows/ci.yml/badge.svg)](https://github.com/daniellopez882/Autonomous-Multi-Agent-Orchestration-for-Business-Synthesis/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
----
+Three specialist agents — meeting, sales, workflow — behind an orchestrator
+that plans which of them a request needs, runs them over a transcript, and
+synthesises one JSON document. Served as a FastAPI endpoint with a dashboard,
+and as a CLI.
 
-## 💎 The Vision
-In the era of information overload, **Nexus Intelligence** serves as the definitive cognitive layer for business operations. It doesn't just "transcribe" or "summarize"—it **synthesizes**. By deploying a specialized swarm of autonomous agents, Nexus distills raw, messy conversations into high-fidelity, machine-readable strategic intelligence.
+## At a glance
 
-> "The signal is buried in the noise. Nexus is the filter."
+| | |
+|---|---|
+| **Does** | Plan → run the needed agents → synthesise: executive summary, decisions, action items, next steps; MEDDIC/BANT-style qualification with a model-assessed deal-health score; a written description of automation opportunities |
+| **Does not** | Execute anything the workflow agent proposes; integrate with any CRM; persist anything |
+| **Providers** | `anthropic` (model from `ANTHROPIC_MODEL`) and `openai` — any OpenAI-compatible base URL, DeepSeek by default (model from `OPENAI_MODEL`) |
+| **Tests** | 100 — none reach a network or need a credential |
+| **CI** | lint · tests · no `.env` and no key-shaped string may be tracked · bandit (fails the job) · gitleaks over full history · container built, run as non-root, refused on an unsafe production config |
+| **Same code as** | [`Meeting-Intelligence-Agent`](https://github.com/daniellopez882/Meeting-Intelligence-Agent) — `src/` was byte-identical; the fixes there were ported here and three more were found in the porting |
 
----
-
-## 🚀 Key Capabilities
-
-### 🏛️ Meta-Intelligence Orchestrator
-The neural center of the platform. It analyzes user intent and dynamically routes tasks to the most efficient agent specialized for the objective.
-
-### 📈 Sales Alpha (MEDDIC/BANT)
-A dedicated agent for revenue operations. It performs real-time deal health scoring, identifies decision-makers, and predicts win-probabilities using established enterprise frameworks.
-
-### ⚙️ Automation Architect
-Beyond insights, Nexus builds solutions. It identifies manual inefficiencies discussed in meetings and autonomously generates Python-based automation specs and ROI projections.
-
-### 📝 Executive Synthesis
-Bypasses the fluff. Generates C-suite summaries with weighted action items, decision logs, and priority-verified task lists.
-
----
-
-## 🛠️ Technical Architecture
-
-Nexus utilizes a proprietary **Planner-Executor-Synthesizer** loop, ensuring every piece of data is verified and contextualized before delivery.
+## Architecture
 
 ```mermaid
-graph TD
-    Input[🎧 Raw Stream / Transcript] --> Orch[🧠 Meta-Orchestrator]
-    
-    subgraph "Reasoning Plane"
-    Orch --> Plan[Dynamic Intent Routing]
-    end
-    
-    subgraph "Execution Swarm"
-    Plan --> M1[📁 Business Intel Agent]
-    Plan --> M2[📈 Revenue Intel Agent]
-    Plan --> M3[⚙️ DevOps & Automation Agent]
-    end
-    
-    M1 --> Synthesis
-    M2 --> Synthesis
-    M3 --> Synthesis
-    
-    subgraph "Synthesis & Delivery"
-    Synthesis[🎯 Intelligence Fusion]
-    end
-    
-    Synthesis --> Output[📦 Structured JSON Hub]
-
-    style Orch fill:#0f172a,stroke:#6366f1,color:#fff
-    style Plan fill:#0f172a,stroke:#06b6d4,color:#fff
-    style Synthesis fill:#0f172a,stroke:#f43f5e,color:#fff
+flowchart LR
+    IN[request + transcript] --> API[POST /api/process<br/>X-API-Key · size limits]
+    CLI[python -m src.main] --> ORC
+    API --> ORC{Orchestrator}
+    ORC -->|1. plan| PLAN[which agents?<br/>JSON from the model]
+    PLAN --> M[Meeting agent<br/>summary · decisions · actions]
+    PLAN --> S[Sales agent<br/>MEDDIC / BANT · deal health]
+    PLAN --> W[Workflow agent<br/>automation opportunities]
+    M & S & W -->|2. outputs| SYN[3. synthesis<br/>one JSON document]
+    SYN --> OUT[unified_response + metadata]
+    M & S & W & PLAN & SYN -.->|every reply| X[extract_json<br/>never raises]
+    classDef llm fill:#312e81,color:#e0e7ff,stroke:#4338ca
+    class PLAN,M,S,W,SYN llm
 ```
 
----
+### One request
 
-## ⚡ Quick Start
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D as Dashboard / client
+    participant A as FastAPI
+    participant O as Orchestrator
+    participant L as Provider (Anthropic or OpenAI-compatible)
 
-### Deployment
+    D->>A: POST /api/process {request, content, provider} + X-API-Key
+    A->>A: constant-time key check; request ≤ 2k chars, content ≤ 200k
+    A->>O: process_request(request, content)
+    O->>L: plan (system prompt + request + preview)
+    L-->>O: {"orchestration_plan": {"agents_required": [...]}}
+    loop each required agent
+        O->>L: agent prompt + transcript
+        L-->>O: agent JSON (parsed with extract_json)
+    end
+    O->>L: synthesis (plan + agent outputs)
+    L-->>O: unified_response + metadata
+    O-->>A: dict
+    A-->>D: 200 JSON — or 401 / 422 / 503 / 500 with a request id
+```
+
+## Quick start
+
 ```bash
-# Clone the intelligence hub
-git clone https://github.com/Wajiz-pk/Nexus-Intelligence.git
-
-# Enter the nucleus
-cd Nexus-Intelligence
-
-# Initialize dependencies
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env      # add ANTHROPIC_API_KEY and/or OPENAI_API_KEY, and an API_KEY
 ```
 
-### Execution
-Trigger the orchestration engine from the CLI:
+Serve the API and the dashboard:
+
 ```bash
-python main.py --request "Extract MEDDIC scores and action items" --file ./transcript.txt
+uvicorn src.api:app --reload
 ```
 
----
+Open <http://127.0.0.1:8000/>, enter the `API_KEY` in the sidebar, paste a
+transcript. Or from the shell — stdout is the JSON document and nothing else:
 
-## 🌐 Enterprise Ecosystem
-Nexus is designed to be **Provider Agnostic**, supporting:
-- **Anthropic** (Claude 3.5 Sonnet/Opus)
-- **OpenAI** (GPT-4o)
-- **DeepSeek** (V3 / R1)
-- **Mistral** (Large 2)
+```bash
+python -m src.main --request "Qualify this sales call" --file transcript.txt --provider anthropic | jq .
+```
 
----
+### Container
 
-## 🗺️ Product Roadmap
-- [x] Multi-Agent Core Orchestration
-- [x] Sales Intelligence Integration (MEDDIC)
-- [ ] Real-time Webhook Support (Zoom/Teams)
-- [ ] CRM Native Sync (Salesforce/HubSpot)
-- [ ] Predictive Revenue Analytics Dashboard
+```bash
+docker build -t nexus-intelligence .
+docker run --rm -p 8000:8000 --env-file .env nexus-intelligence
+```
 
----
+With `ENVIRONMENT=production`, startup validates the configuration and exits
+non-zero on the placeholder `API_KEY`, a missing provider key, or an empty
+CORS allowlist.
 
-### 🏛️ Credits & Contact
-Nexus Intelligence is a vision-driven project developed by **Wajiz**.
+## Configuration
 
-[![Portfolio](https://img.shields.io/badge/Portfolio-Visit%20Site-blue?style=flat-square)](https://wajiz.pk)
-[![GitHub](https://img.shields.io/badge/GitHub-Follow-black?style=flat-square)](https://github.com/Wajiz-pk)
+| Variable | Default | Notes |
+|---|---|---|
+| `API_KEY` | `changeme-in-production` | Required by `/api/process`. Production refuses to start on the placeholder |
+| `ANTHROPIC_API_KEY` · `ANTHROPIC_MODEL` | — · `claude-sonnet-5` | |
+| `OPENAI_API_KEY` · `OPENAI_MODEL` · `OPENAI_BASE_URL` | — · `deepseek-chat` · `https://api.deepseek.com` | Any OpenAI-compatible endpoint |
+| `LLM_TIMEOUT_SECONDS` · `LLM_MAX_RETRIES` | `60` · `2` | Applied to both SDK clients |
+| `CORS_ALLOW_ORIGINS` | *(empty)* | Comma-separated. Empty in production means no browser origin |
+| `ENVIRONMENT` | `development` | `production` enables the startup check and hides `/docs` |
 
----
-*Built for the future of agentic work.*
+## API
+
+| Route | Auth | Purpose |
+|---|:-:|---|
+| `POST /api/process` | key | `{"request", "content", "provider": "openai" \| "anthropic"}` → the synthesised document |
+| `GET /health` | — | Liveness |
+| `GET /ready` | — | Readiness: provider credentials, API key posture, static assets |
+| `GET /` | — | The dashboard |
+
+## What changed, and why
+
+Every defect below was reproduced before it was fixed.
+
+| # | Defect | Effect |
+|--:|---|---|
+| 1 | `/api/process` accepted any caller | Anyone reaching the port could spend the model credit |
+| 2 | `content` had no size limit | One request could carry an arbitrarily large transcript into a model call |
+| 3 | Four copies of a hand-rolled JSON parser, each with the same four bugs | Two inputs *raised* out of a function whose contract was to return an error dict |
+| 4 | `detail=str(e)` on every 500 | Provider exceptions carry endpoint URLs and sometimes key fragments |
+| 5 | `allow_origins=["*"]` with credentials | Any page in any browser could call the endpoint |
+| 6 | `generate()` hardcoded `claude-3-5-sonnet-20240620` | A retired model; `ANTHROPIC_MODEL` existed and was read by nothing |
+| 7 | `LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES` declared, never applied | A hung provider connection hung the request |
+| 8 | Progress and errors `print()`ed to **stdout** | The CLI's JSON output had prose mixed into it |
+| 9 | The dashboard never sent the key | Every submission a 401 once auth existed |
+| 10 | On any error the page showed `98%` confidence, `1` agent, `4.0s` "Synthesis Time" | Fabricated numbers, from `||` defaults, on a field the API never produces |
+| 11 | Model output written to `innerHTML` unescaped | A transcript that makes the model echo HTML runs it in the browser |
+
+<details>
+<summary>Also</summary>
+
+`os.makedirs("public")` at import; a new provider client per request; no `/health` or `/ready`; `Config` with no validation and no API-key setting at all; `pytest` shipped in the runtime requirements; Bandit in CI with `continue-on-error`; provider labels naming models the code never selects; a footer version number that corresponded to nothing.
+
+</details>
+
+## Design notes
+
+| Record | Decision |
+|---|---|
+| [ADR 0001](docs/adr/0001-one-json-parser.md) | One JSON extractor, guaranteed not to raise |
+| [ADR 0002](docs/adr/0002-the-model-endpoint-is-not-open.md) | The model endpoint is authenticated, bounded, and closed in production by default |
+| [ADR 0003](docs/adr/0003-configuration-is-read-not-assumed.md) | Configuration is read, not assumed; stdout is the document |
+| [Threat model](docs/threat-model.md) | Assets, six threats, what is not addressed |
+
+## Layout
+
+```
+src/
+  api.py                 FastAPI: auth, limits, lifespan check, /health, /ready, dashboard
+  main.py                CLI; JSON on stdout, status on stderr
+  orchestrator/          plan → agents → synthesis
+  agents/                meeting, sales, workflow
+  core/
+    config.py            settings, validate_production()
+    llm_client.py        one client over two SDKs; model/timeout/retries from config
+    json_extraction.py   the one parser
+    prompts.py
+public/index.html        the dashboard, served at /
+tests/                   100 tests
+docs/                    ADRs, threat model
+```
+
+## Limits
+
+- Everything the model says is the model's assessment. "Deal health" and "confidence" are model-reported numbers, labelled as such in the dashboard; nothing here measures accuracy.
+- No persistence, no queue, no rate limit. One shared API key.
+- The workflow agent *describes* automation. It does not run any.
+- No latency figures: nothing was run against a provider in this repository.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
